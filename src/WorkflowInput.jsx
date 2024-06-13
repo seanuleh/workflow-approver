@@ -22,6 +22,7 @@ const WorkflowInput = ({ onWorkflowReceived }) => {
         value={workflow}
         onChange={handleWorkflowChange}
         margin="normal"
+        variant='outlined'
         fullWidth
       />
       <Button type="submit" variant="contained" color="primary">

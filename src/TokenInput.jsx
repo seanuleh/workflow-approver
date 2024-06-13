@@ -31,6 +31,7 @@ const TokenInput = ({ onTokenReceived }) => {
             label="Github Token"
             value={token}
             onChange={handleTokenChange}
+            variant='outlined'
             margin="normal"
             fullWidth
           />
