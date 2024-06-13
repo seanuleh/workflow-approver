@@ -113,7 +113,8 @@ function App() {
   };
 
   const refreshApproved = (env_name, environment_id) => {
-    if (fetchDeployments().find(deployment => deployment.environment.id === environment_id && deployment.environment.name === env_name)) {
+    const pendingDeployments = fetchDeployments();
+    if (pendingDeployments.find(deployment => deployment.environment.id === environment_id && deployment.environment.name === env_name)) {
       setTimeout(() => refreshApproved(env_name, environment_id), 3000);
     }
   };
@@ -140,6 +141,12 @@ function App() {
       if (response.ok) {
         dispatch(openSnackbar("Approved Deployment", "success"));
         setTimeout(() => refreshApproved(env_name, environment_id), 3000);
+      } else {
+        const responseBody = await response.json();
+        console.log(responseBody);
+        dispatch(openSnackbar(`Failed to approve deployment: ${responseBody.errors}`, "error"));
+        dispatch(openSnackbar(`Check Workflow URL and Github Token`, "warning"));
+        handleClearWorkflow();
       }
     } catch (error) {
       console.error(error);
