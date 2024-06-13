@@ -17,7 +17,7 @@ export const closeSnackbar = () => {
 export const setToken = (newToken) => ({
     type: 'SET_TOKEN',
     payload: newToken,
-});  
+});
 
 export const setWorkflow = (newWorkflow) => ({
     type: 'SET_WORKFLOW',

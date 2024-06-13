@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { connect } from 'react-redux';
+
+import { openSnackbar, closeSnackbar, setToken, setWorkflow, setDeployments, setIsApproving } from './store/actions';
+import { useHandlers } from './store/handlers';
 
 import './App.css'
 import TokenInput from './TokenInput';
 import WorkflowInput from './WorkflowInput';
-import { AppBar, Toolbar, Button, Typography } from '@material-ui/core';
+import AlertSnackbar from './Snackbar';
 
+import { AppBar, Toolbar, Button, Typography } from '@material-ui/core';
 import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import DoneIcon from '@mui/icons-material/Done';
@@ -13,16 +18,10 @@ import IconButton from '@mui/material/IconButton';
 import Fab from '@mui/material/Fab';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Grid from '@mui/material/Unstable_Grid2';
-import AlertSnackbar from './Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
-import { openSnackbar, closeSnackbar, setToken, setWorkflow, setDeployments, setIsApproving } from './actions';
-
-
-import { connect } from 'react-redux';
 
 function App() {
   const dispatch = useDispatch();
-  const [refreshInterval, setRefreshInterval] = useState(null);
 
   const token = useSelector(state => state.token);
   const workflow = useSelector(state => state.workflow);
@@ -32,130 +31,17 @@ function App() {
   const snackbarMessage = useSelector(state => state.snackbar.snackbarMessage);
   const snackbarSeverity = useSelector(state => state.snackbar.snackbarSeverity);
 
-  const handleTokenReceived = (receivedToken) => {
-    dispatch(setToken(receivedToken));
-  };
-
-  const handleWorkflowReceived = (receivedWorkflow) => {
-    dispatch(setWorkflow(receivedWorkflow));
-  };
-
-  const handleClearToken = () => {
-    if (token) {
-      localStorage.removeItem('token');
-      dispatch(setToken(''));
-      dispatch(setWorkflow(''));
-      dispatch(setDeployments([]));
-    }
-  };
-
-  const handleClearWorkflow = () => {
-    dispatch(setWorkflow(''));
-    dispatch(setIsApproving([]));
-    dispatch(setDeployments([]));
-  };
-
-  const handleDeploymentRefresh = () => {
-    fetchDeployments();
-    dispatch(openSnackbar("Refreshing Deployments", "success"));
-  };
+  const { handleTokenReceived, handleWorkflowReceived, handleClearToken, handleClearWorkflow, handleDeploymentRefresh, fetchDeployments, refreshApproved, approveWorkflow, parseWorkflowUrl } = useHandlers();
 
   useEffect(() => {
     if (token && workflow) {
       fetchDeployments();
     }
-    if (refreshInterval) {
-      return () => clearInterval(refreshInterval);
-    }
-
-  }, [token, workflow, refreshInterval, dispatch]);
-
-  const parseWorkflowUrl = (workflowUrl) => {
-    if (typeof workflowUrl !== 'string') {
-      console.error(error);
-      throw new Error("Failed to parse workflow URL");
-    }
-  
-    const urlParts = workflowUrl.split('/');
-    const org = urlParts[3];
-    const repo = urlParts[4];
-    const run_id = urlParts[7];
-    return { org, repo, run_id };
-  };
-  const fetchDeployments = async () => {    
-    try {
-        const { org, repo, run_id } = parseWorkflowUrl(workflow);
-        const response = await fetch(
-            `https://api.github.com/repos/${org}/${repo}/actions/runs/${run_id}/pending_deployments`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            }
-        );
-        const data = await response.json();
-        const pendingDeployments = data.map(
-            (deployment) => {
-                return { ...deployment, env_name: deployment.environment.name };
-            }
-        );
-        dispatch(setDeployments(pendingDeployments));
-        dispatch(setIsApproving(pendingDeployments.map(deployment => ({
-          environment: deployment.env_name,
-          status: "pending"
-        }))));
-        return pendingDeployments;
-    } catch (error) {
-        console.error(error);
-        dispatch(openSnackbar("Failed to fetch pending deployments, Retry URL or Clear Token", "error"));
-        handleClearWorkflow();
-    }
-  };
-
-  const refreshApproved = (env_name, environment_id) => {
-    const pendingDeployments = fetchDeployments();
-    if (pendingDeployments.find(deployment => deployment.environment.id === environment_id && deployment.environment.name === env_name)) {
-      setTimeout(() => refreshApproved(env_name, environment_id), 3000);
-    }
-  };
-
-  const approveWorkflow = async (env_name, environment_id) => {
-    dispatch(setIsApproving(isApproving.map((a) => a.environment === env_name ? { ...a, status: "approving" } : a)));
-    const { org, repo, run_id } = parseWorkflowUrl(workflow);
-    try {
-      const response = await fetch(
-        `https://api.github.com/repos/${org}/${repo}/actions/runs/${run_id}/pending_deployments`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ 
-            environment_ids: [environment_id], 
-            state: "approved",
-            comment: ""
-          }),
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      if (response.ok) {
-        dispatch(openSnackbar("Approved Deployment", "success"));
-        setTimeout(() => refreshApproved(env_name, environment_id), 3000);
-      } else {
-        const responseBody = await response.json();
-        console.log(responseBody);
-        dispatch(openSnackbar(`Failed to approve deployment: ${responseBody.errors}`, "error"));
-        dispatch(openSnackbar(`Check Workflow URL and Github Token`, "warning"));
-        handleClearWorkflow();
-      }
-    } catch (error) {
-      console.error(error);
-      dispatch(openSnackbar("Failed to approve deployment", "error"));
-    }
-  };
+  }, [token, workflow, dispatch]);
 
   return (
-    <div>
+    <>
+      {/* Render Header */}
       <AppBar position="fixed">
         <Toolbar style={{ display: 'flex', justifyContent: 'space-between' }}>
           {token && (
@@ -171,18 +57,18 @@ function App() {
         </Toolbar>
       </AppBar>
 
+      {/* Handle Token Inputs */}
       {!token && (
-        <>
-          <TokenInput onTokenReceived={handleTokenReceived} />
-        </>
+        <TokenInput onTokenReceived={handleTokenReceived} />
       )}
       {token && !workflow && (
         <WorkflowInput onWorkflowReceived={handleWorkflowReceived} />
       )}
 
+      {/* Render Workflow Header */}
       {workflow && (
         <>
-            <Grid container spacing={2}>
+          <Grid container spacing={2}>
             <Grid xs={12}>
               <Typography variant="h6">
                 {parseWorkflowUrl(workflow).org}/{parseWorkflowUrl(workflow).repo}
@@ -198,16 +84,17 @@ function App() {
               </Typography>
             </Grid>
             <Grid xs={2}>
-              <Fab color="primary" size="small"  aria-label="refresh" onClick={handleDeploymentRefresh}>
+              <Fab color="primary" size="small" aria-label="refresh" onClick={handleDeploymentRefresh}>
                 <RefreshIcon />
               </Fab>
             </Grid>
-            </Grid>
+          </Grid>
         </>
       )}
 
+      {/* Render Deployment Approval List */}
       {deployments && deployments.map((deployment) => (
-        <>
+        <React.Fragment key={deployment.env_name}>
           <ListItem key={deployment.env_name} spacing={5}>
             <ListItemText primary={deployment.env_name} />
             {isApproving.find((a) => a.environment === deployment.env_name && a.status === "pending") ? (
@@ -221,7 +108,7 @@ function App() {
               <CircularProgress />
             )}
           </ListItem>
-        </>
+        </React.Fragment>
       ))}
 
       <AlertSnackbar
@@ -230,8 +117,7 @@ function App() {
         snackbarSeverity={snackbarSeverity}
         closeSnackbar={() => dispatch(closeSnackbar())}
       />
-
-    </div>
+    </>
   );
 }
 
