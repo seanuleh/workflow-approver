@@ -14,8 +14,7 @@ import { AppBar, Toolbar, Button, Typography } from '@material-ui/core';
 import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import IconButton from '@mui/material/IconButton';
-import Fab from '@mui/material/Fab';
-import RefreshIcon from '@mui/icons-material/Refresh';
+import CircularProgress from '@mui/material/CircularProgress';
 import Grid from '@mui/material/Unstable_Grid2';
 
 import ListItemAvatar from '@mui/material/ListItemAvatar';
@@ -27,7 +26,7 @@ import NotStartedIcon from '@mui/icons-material/NotStarted';
 import AddTaskIcon from '@mui/icons-material/AddTask';
 
 
-import { useToken, useWorkflow, useDeployments, useEnvironments,useSnackbarOpen, useJobs, useSnackbarMessage, useSnackbarSeverity, useSnackbarDuration } from './store/selectors';
+import { useToken, useWorkflow, useDeployments, useEnvironments, useRefreshIndicator, useSnackbarOpen, useJobs, useSnackbarMessage, useSnackbarSeverity, useSnackbarDuration } from './store/selectors';
 
 function App() {
   const dispatch = useDispatch();
@@ -36,10 +35,11 @@ function App() {
   const workflow = useWorkflow();
   const deployments = useDeployments();
   const snackbarOpen = useSnackbarOpen();
+  const refreshIndicator = useRefreshIndicator();
   const snackbarMessage = useSnackbarMessage();
   const snackbarSeverity = useSnackbarSeverity();
   const snackbarDuration = useSnackbarDuration();
-  
+
 
   const { handleTokenReceived, handleAutoRefresh, handleWorkflowReceived, handlePageLoad, handleClearToken, handleClearWorkflow, handleDeploymentRefresh, approveWorkflow, parseWorkflowUrl } = useHandlers();
 
@@ -51,7 +51,7 @@ function App() {
 
   useEffect(() => {
     let intervalId = null; // Declare a variable to hold the interval ID
-  
+
     if (workflow && deployments.length > 0) {
       if (!deployments.every(deployment => deployment.status == "success")) {
         intervalId = setInterval(() => {
@@ -115,10 +115,12 @@ function App() {
                 {parseWorkflowUrl(workflow).run_id}
               </Typography>
             </Grid>
-            <Grid xs={2}>
-              <Fab color="primary" size="small" aria-label="refresh" onClick={handleDeploymentRefresh}>
-                <RefreshIcon />
-              </Fab>
+            <Grid xs={2} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '40px' }}>
+              {refreshIndicator ? (
+                <CircularProgress size="2rem" />
+              ) : (
+                <div style={{ width: '2rem', height: '2rem' }}></div>
+              )}
             </Grid>
           </Grid>
         </>
@@ -150,7 +152,7 @@ function App() {
                 <br />
                 {`${deployment.status}`}
               </span>
-            }/>
+            } />
             {(deployment.status == "waiting") ? (
               <IconButton aria-label="approve" onClick={() => {
                 approveWorkflow(deployment.environment);

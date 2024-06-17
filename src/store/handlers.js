@@ -1,11 +1,12 @@
 import { useDispatch, useSelector } from 'react-redux';
-import { setToken, setWorkflow, setDeployments, setJobs, openSnackbar, closeSnackbar, setEnvironments } from './actions';
+import { setToken, setWorkflow, setRefreshIndicator, setDeployments, setJobs, openSnackbar, closeSnackbar, setEnvironments } from './actions';
 
 export const useHandlers = () => {
   const dispatch = useDispatch();
   const workflow = useSelector(state => state.workflow);
   const token = useSelector(state => state.token);
   const jobs = useSelector(state => state.jobs);
+  const refreshIndicator = useSelector(state => state.refreshIndicator);
   const environments = useSelector(state => state.environments);
 
   const handleTokenReceived = (receivedToken) => {
@@ -71,6 +72,7 @@ export const useHandlers = () => {
 
   const fetchDeployments = async () => {
     try {
+      dispatch(setRefreshIndicator(true));
       const jobs = await getWorklowJobs();
       const environments = await getEnvironments();
       const workflowSha = await getWorfklowSha();
@@ -78,6 +80,7 @@ export const useHandlers = () => {
       dispatch(setDeployments([]));
       console.log(deploymentLocal[0].status)
       dispatch(setDeployments(deploymentLocal));
+      dispatch(setRefreshIndicator(false));
       return deploymentLocal;
     } catch (error) {
       console.error(error);

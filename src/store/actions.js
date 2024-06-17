@@ -39,3 +39,8 @@ export const setEnvironments = (newEnvironments) => ({
     type: 'SET_ENVIRONMENTS',
     payload: newEnvironments,
 });
+
+export const setRefreshIndicator = (newRefreshIndicator) => ({
+    type: 'SET_REFRESH_INDICATOR',
+    payload: newRefreshIndicator,
+});

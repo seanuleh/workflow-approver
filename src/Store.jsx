@@ -76,6 +76,15 @@ const environmentsReducer = (state = [], action) => {
   }
 }
 
+const refreshIndicatorReducer = (state = false, action) => {
+  switch (action.type) {
+    case 'SET_REFRESH_INDICATOR':
+      return action.payload;
+    default:
+      return state;
+  }
+}
+
 // Create the Redux store
 const store = configureStore({
   reducer: {
@@ -85,6 +94,7 @@ const store = configureStore({
     token: tokenReducer,
     jobs: jobsReducer,
     environments: environmentsReducer,
+    refreshIndicator: refreshIndicatorReducer,
   },
 });
 
