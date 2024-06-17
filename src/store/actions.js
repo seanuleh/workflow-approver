@@ -1,10 +1,11 @@
 // actions.js
 
-export const openSnackbar = (message, severity) => {
+export const openSnackbar = (message, severity, duration) => {
     return {
         type: 'OPEN_SNACKBAR',
         message: message,
         severity: severity,
+        duration: duration,
     };
 };
 
@@ -29,8 +30,12 @@ export const setDeployments = (newDeployments) => ({
     payload: newDeployments,
 });
 
-export const setIsApproving = (newIsApproving) => ({
-    type: 'SET_IS_APPROVING',
-    payload: newIsApproving,
+export const setJobs = (newJobs) => ({
+    type: 'SET_JOBS',
+    payload: newJobs,
 });
 
+export const setEnvironments = (newEnvironments) => ({
+    type: 'SET_ENVIRONMENTS',
+    payload: newEnvironments,
+});

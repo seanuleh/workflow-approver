@@ -3,11 +3,11 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 
 
-const AlertSnackbar = ({ snackbarOpen, snackbarMessage, snackbarSeverity, closeSnackbar }) => {
+const AlertSnackbar = ({ snackbarOpen, snackbarMessage, snackbarDuration, snackbarSeverity, closeSnackbar }) => {
   return (
-    <Snackbar open={snackbarOpen} autoHideDuration={2000} onClose={closeSnackbar}>
+    <Snackbar open={snackbarOpen} autoHideDuration={snackbarDuration} onClose={closeSnackbar}>
       <Alert onClose={closeSnackbar} severity={snackbarSeverity} sx={{ width: '100%' }}>
-        {snackbarMessage}
+        <span style={{ whiteSpace: 'pre-line' }}>{snackbarMessage}</span>
       </Alert>
     </Snackbar>
   );

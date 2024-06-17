@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { connect } from 'react-redux';
 
-import { openSnackbar, closeSnackbar, setToken, setWorkflow, setDeployments, setIsApproving } from './store/actions';
+import { openSnackbar, closeSnackbar, setToken, setWorkflow, setDeployments, setJobs, setEnvironments } from './store/actions';
 import { useHandlers } from './store/handlers';
 
 import './App.css'
@@ -13,31 +13,63 @@ import AlertSnackbar from './Snackbar';
 import { AppBar, Toolbar, Button, Typography } from '@material-ui/core';
 import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
-import DoneIcon from '@mui/icons-material/Done';
 import IconButton from '@mui/material/IconButton';
 import Fab from '@mui/material/Fab';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Grid from '@mui/material/Unstable_Grid2';
-import CircularProgress from '@mui/material/CircularProgress';
+
+import ListItemAvatar from '@mui/material/ListItemAvatar';
+import Avatar from '@mui/material/Avatar';
+import PendingIcon from '@mui/icons-material/Pending';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import RunCircleIcon from '@mui/icons-material/RunCircle';
+import NotStartedIcon from '@mui/icons-material/NotStarted';
+import AddTaskIcon from '@mui/icons-material/AddTask';
+
+
+import { useToken, useWorkflow, useDeployments, useEnvironments,useSnackbarOpen, useJobs, useSnackbarMessage, useSnackbarSeverity, useSnackbarDuration } from './store/selectors';
 
 function App() {
   const dispatch = useDispatch();
 
-  const token = useSelector(state => state.token);
-  const workflow = useSelector(state => state.workflow);
-  const deployments = useSelector(state => state.deployments);
-  const isApproving = useSelector(state => state.isApproving);
-  const snackbarOpen = useSelector(state => state.snackbar.snackbarOpen);
-  const snackbarMessage = useSelector(state => state.snackbar.snackbarMessage);
-  const snackbarSeverity = useSelector(state => state.snackbar.snackbarSeverity);
+  const token = useToken();
+  const workflow = useWorkflow();
+  const deployments = useDeployments();
+  const snackbarOpen = useSnackbarOpen();
+  const snackbarMessage = useSnackbarMessage();
+  const snackbarSeverity = useSnackbarSeverity();
+  const snackbarDuration = useSnackbarDuration();
+  
 
-  const { handleTokenReceived, handleWorkflowReceived, handleClearToken, handleClearWorkflow, handleDeploymentRefresh, fetchDeployments, refreshApproved, approveWorkflow, parseWorkflowUrl } = useHandlers();
+  const { handleTokenReceived, handleAutoRefresh, handleWorkflowReceived, handlePageLoad, handleClearToken, handleClearWorkflow, handleDeploymentRefresh, approveWorkflow, parseWorkflowUrl } = useHandlers();
 
   useEffect(() => {
     if (token && workflow) {
-      fetchDeployments();
+      handlePageLoad();
     }
   }, [token, workflow, dispatch]);
+
+  useEffect(() => {
+    let intervalId = null; // Declare a variable to hold the interval ID
+  
+    if (workflow && deployments.length > 0) {
+      if (!deployments.every(deployment => deployment.status == "success")) {
+        intervalId = setInterval(() => {
+          handlePageLoad();
+        }, 3000);
+      }
+
+      if (deployments.every(deployment => deployment.status === "success")) {
+        clearInterval(intervalId);
+      }
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [token, workflow, deployments, dispatch]); // Dependencies array
 
   return (
     <>
@@ -94,19 +126,38 @@ function App() {
 
       {/* Render Deployment Approval List */}
       {deployments && deployments.map((deployment) => (
-        <React.Fragment key={deployment.env_name}>
-          <ListItem key={deployment.env_name} spacing={5}>
-            <ListItemText primary={deployment.env_name} />
-            {isApproving.find((a) => a.environment === deployment.env_name && a.status === "pending") ? (
+        <React.Fragment key={deployment.id}>
+          <ListItem key={deployment.id} spacing={5}>
+            <ListItemAvatar>
+              <Avatar>
+                {(deployment.status == "waiting") ? (
+                  <NotStartedIcon />
+                ) : null}
+                {(deployment.status == "queued") ? (
+                  <PendingIcon />
+                ) : null}
+                {(deployment.status == "in_progress") ? (
+                  <RunCircleIcon />
+                ) : null}
+                {(deployment.status == "success") ? (
+                  <CheckCircleOutlineIcon />
+                ) : null}
+              </Avatar>
+            </ListItemAvatar>
+            <ListItemText primary={deployment.environment} secondary={
+              <span>
+                {`${deployment.jobName}`}
+                <br />
+                {`${deployment.status}`}
+              </span>
+            }/>
+            {(deployment.status == "waiting") ? (
               <IconButton aria-label="approve" onClick={() => {
-                approveWorkflow(deployment.env_name, deployment.environment.id);
+                approveWorkflow(deployment.environment);
               }}>
-                <DoneIcon />
+                <AddTaskIcon />
               </IconButton>
             ) : null}
-            {isApproving.find((a) => a.environment === deployment.env_name && a.status === "approving") && (
-              <CircularProgress />
-            )}
           </ListItem>
         </React.Fragment>
       ))}
@@ -115,6 +166,7 @@ function App() {
         snackbarOpen={snackbarOpen}
         snackbarMessage={snackbarMessage}
         snackbarSeverity={snackbarSeverity}
+        snackbarDuration={snackbarDuration}
         closeSnackbar={() => dispatch(closeSnackbar())}
       />
     </>
@@ -125,7 +177,6 @@ const mapStateToProps = (state) => ({
   token: state.token,
   workflow: state.workflow.workflow,
   deployments: state.deployments.deployments,
-
 });
 
 const mapDispatchToProps = {
@@ -134,7 +185,6 @@ const mapDispatchToProps = {
   setToken,
   setWorkflow,
   setDeployments,
-  setIsApproving,
 };
 
 export default connect(mapStateToProps, mapDispatchToProps)(App);

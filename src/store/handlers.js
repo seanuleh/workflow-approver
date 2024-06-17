@@ -1,11 +1,12 @@
 import { useDispatch, useSelector } from 'react-redux';
-import { setToken, setWorkflow, setDeployments, setIsApproving, openSnackbar, closeSnackbar } from './actions';
+import { setToken, setWorkflow, setDeployments, setJobs, openSnackbar, closeSnackbar, setEnvironments } from './actions';
 
 export const useHandlers = () => {
   const dispatch = useDispatch();
   const workflow = useSelector(state => state.workflow);
   const token = useSelector(state => state.token);
-  const isApproving = useSelector(state => state.isApproving);
+  const jobs = useSelector(state => state.jobs);
+  const environments = useSelector(state => state.environments);
 
   const handleTokenReceived = (receivedToken) => {
     dispatch(setToken(receivedToken));
@@ -26,13 +27,16 @@ export const useHandlers = () => {
 
   const handleClearWorkflow = () => {
     dispatch(setWorkflow(''));
-    dispatch(setIsApproving([]));
     dispatch(setDeployments([]));
   };
 
   const handleDeploymentRefresh = () => {
     fetchDeployments();
-    dispatch(openSnackbar("Refreshing Deployments", "success"));
+    dispatch(openSnackbar("Refreshing Deployments", "success", 1000));
+  };
+
+  const handlePageLoad = async () => {
+    fetchDeployments();  
   };
 
   const parseWorkflowUrl = (workflowUrl) => {
@@ -48,47 +52,173 @@ export const useHandlers = () => {
     return { org, repo, run_id };
   };
 
+  const parseTargetUrl = (targetUrl) => {
+    if (typeof targetUrl !== 'string') {
+      console.error(error);
+      throw new Error("Failed to parse workflow URL");
+    }
+
+    const urlParts = targetUrl.split('/');
+    const jobIdIndex = urlParts.findIndex(part => part === 'job') + 1;
+    const jobId = jobIdIndex > 0 ? urlParts[jobIdIndex] : null;
+  
+    if (!jobId) {
+      throw new Error("Job ID not found in URL");
+    }
+  
+    return jobId;
+  };
+
   const fetchDeployments = async () => {
     try {
-      const { org, repo, run_id } = parseWorkflowUrl(workflow);
-      const response = await fetch(
-        `https://api.github.com/repos/${org}/${repo}/actions/runs/${run_id}/pending_deployments`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      const data = await response.json();
-      const pendingDeployments = data.map(
-        (deployment) => {
-          return { ...deployment, env_name: deployment.environment.name };
-        }
-      );
-      dispatch(setDeployments(pendingDeployments));
-      dispatch(setIsApproving(pendingDeployments.map(deployment => ({
-        environment: deployment.env_name,
-        status: "pending"
-      }))));
-      return pendingDeployments;
+      const jobs = await getWorklowJobs();
+      const environments = await getEnvironments();
+      const workflowSha = await getWorfklowSha();
+      let deploymentLocal = await getDeploymentsForSha(workflowSha, jobs, environments);
+      dispatch(setDeployments([]));
+      console.log(deploymentLocal[0].status)
+      dispatch(setDeployments(deploymentLocal));
+      return deploymentLocal;
     } catch (error) {
       console.error(error);
-      dispatch(openSnackbar("Failed to fetch pending deployments, Retry URL or Clear Token", "error"));
+      dispatch(openSnackbar(`Failed to fetch deployments, Retry URL or Clear Token\n${error.message}`, "error", 5000));
       handleClearWorkflow();
     }
   };
 
-  const refreshApproved = (env_name, environment_id) => {
-    const pendingDeployments = fetchDeployments();
-    if (pendingDeployments.size > 0 && pendingDeployments.find(deployment => deployment.environment.id === environment_id && deployment.environment.name === env_name)) {
-      setTimeout(() => refreshApproved(env_name, environment_id), 3000);
+  const getDeploymentsForSha = async (workflowSha, jobs) => {
+    const { org, repo, run_id } = parseWorkflowUrl(workflow);
+    const url = `https://api.github.com/repos/${org}/${repo}/deployments?sha=${workflowSha}`;
+    let response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Deployments: ${response.status}`);
     }
+
+    let data = await response.json();
+    let deploymentSimple = data.map((deployment) => ({
+      id: deployment.id,
+      environment: deployment.environment,
+    }));
+
+    let deploymentsWithStatus = await Promise.all(deploymentSimple.map(async (deployment) => ({
+      id: deployment.id,
+      environment: deployment.environment,
+      status: await getDeploymentStatus(deployment.id),
+    })));
+
+    let deploymentsComplete = await Promise.all(deploymentsWithStatus.map(async (deployment) => ({
+      id: deployment.id,
+      environment: deployment.environment,
+      status: deployment.status.state,
+      jobName: await getJobName(deployment.status.target_url, jobs),
+    })));
+
+    console.log(deploymentsComplete)
+
+    return deploymentsComplete;
   };
 
-  const approveWorkflow = async (env_name, environment_id) => {
-    dispatch(setIsApproving(isApproving.map((a) => a.environment === env_name ? { ...a, status: "approving" } : a)));
+  const getJobName = (target_url, jobs) => {
+    const jobId = parseTargetUrl(target_url);
+    const job = jobs.find(job => job.id == jobId);
+    return job.name;
+  };
+
+  const getDeploymentStatus = async (deploymentId) => {
     const { org, repo, run_id } = parseWorkflowUrl(workflow);
+    const url = `https://api.github.com/repos/${org}/${repo}/deployments/${deploymentId}/statuses?timestamp=${new Date().getTime()}`;
+    let response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Deployment Status: ${response.status}`);
+    }
+
+    let data = await response.json();
+    // if the first status is inactive, return the second status
+    let status = data[0].state == 'inactive' ? data[1] : data[0]
+    return status;
+  };
+
+  const getWorfklowSha = async () => {
+    const { org, repo, run_id } = parseWorkflowUrl(workflow);
+    const url = `https://api.github.com/repos/${org}/${repo}/actions/runs/${run_id}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch jobs: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.head_sha;
+  };
+
+
+  const getWorklowJobs = async (jobs) => {
+    const { org, repo, run_id } = parseWorkflowUrl(workflow);
+    const url = `https://api.github.com/repos/${org}/${repo}/actions/runs/${run_id}/jobs`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Deployment Status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    dispatch(setJobs(data.jobs));
+    return data.jobs;
+  };
+
+
+  const getEnvironments = async () => {
+    const { org, repo, run_id } = parseWorkflowUrl(workflow);
+    const url = `https://api.github.com/repos/${org}/${repo}/environments`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Environemnts: ${response.status}`);
+    }
+
+    const data = await response.json();
+    dispatch(setEnvironments(data.environments));
+    return data.environments;
+  };
+
+
+  const approveWorkflow = async (env_name) => {
     try {
+      const { org, repo, run_id } = parseWorkflowUrl(workflow);
+      const environment_id = await getEnvironmentId(env_name);
+
       const response = await fetch(
         `https://api.github.com/repos/${org}/${repo}/actions/runs/${run_id}/pending_deployments`,
         {
@@ -105,19 +235,22 @@ export const useHandlers = () => {
         }
       );
       if (response.ok) {
-        dispatch(openSnackbar("Approved Deployment", "success"));
-        setTimeout(() => refreshApproved(env_name, environment_id), 3000);
+        dispatch(openSnackbar(`Approved Deployment to ${env_name}`, "success", 3000));
       } else {
         const responseBody = await response.json();
-        dispatch(openSnackbar(`Failed to approve deployment: ${responseBody.errors}`, "error"));
-        dispatch(openSnackbar(`Check Workflow URL and Github Token`, "warning"));
+        dispatch(openSnackbar(`Failed to approve deployment\nRetry URL or Clear Token\n${responseBody.message}`, "error", 5000));
         handleClearWorkflow();
       }
     } catch (error) {
       console.error(error);
-      dispatch(openSnackbar("Failed to approve deployment", "error"));
+      dispatch(openSnackbar(`Failed to approve deployment\nRetry URL or Clear Token\n${error.message}`, "error", 5000));
     }
   };
 
-  return { handleTokenReceived, handleWorkflowReceived, handleClearToken, handleClearWorkflow, handleDeploymentRefresh, fetchDeployments, refreshApproved, approveWorkflow, parseWorkflowUrl };
+  const getEnvironmentId = async (env_name) => {
+    const environment = environments.find(env => env.name == env_name);
+    return environment.id;
+  }
+
+  return { handleTokenReceived, handlePageLoad, handleWorkflowReceived, handleClearToken, handleClearWorkflow, getWorklowJobs, handleDeploymentRefresh, fetchDeployments, approveWorkflow, parseWorkflowUrl };
 };
